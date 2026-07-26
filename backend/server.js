@@ -484,15 +484,21 @@ async function collectProjectData(projectId) {
     const p = rowToProject(rows[0].values[0]);
     const tickers = [p.stock_code, ...(p.peers || []).map(peer => peer.code)];
 
-    // ── SEC CIK Lookup Cache ──
-    let tickerCikMap = {};
+    // ── SEC CIK Lookup ──
+    const COMMON_CIK = { AAPL:'0000320193', MSFT:'0000789019', GOOGL:'0001652044', AMZN:'0001018724', META:'0001326801',
+      TSLA:'0001318605', NVDA:'0001045810', NFLX:'0001065280', JPM:'0000019617', BAC:'0000070858',
+      NKE:'0000320187', DIS:'0001744489', WMT:'0000104169', KO:'0000021344', BA:'0000012927',
+      INTC:'0000050863', AMD:'0000002488', PYPL:'0001633917', UBER:'0001543151', SNAP:'0001564408' };
+    let tickerCikMap = { ...COMMON_CIK };
     try {
-      const secResp = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: { 'User-Agent': 'StockResearchAssistant/1.0 (demo@example.com)' } });
-      const secData = await secResp.json();
-      for (const [_, v] of Object.entries(secData)) {
-        tickerCikMap[v.ticker] = String(v.cik_str).padStart(10, '0');
+      const secResp = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: { 'User-Agent': 'StockResearchAssistant/1.0 (demo@example.com)' }, signal: AbortSignal.timeout(10000) });
+      if (secResp.ok) {
+        const secData = await secResp.json();
+        for (const [_, v] of Object.entries(secData)) {
+          if (!tickerCikMap[v.ticker]) tickerCikMap[v.ticker] = String(v.cik_str).padStart(10, '0');
+        }
       }
-    } catch (e) { console.error('SEC CIK lookup failed:', e.message); }
+    } catch (e) { console.error('SEC CIK lookup:', e.message); }
 
     for (const ticker of tickers) {
       if (!ticker) continue;
