@@ -327,7 +327,7 @@ analysisRouter.get('/:projectId/analysis', (req, res) => {
   // 按类别分组统计
   const catRows = db.exec('SELECT category, COUNT(*) as cnt FROM analysis WHERE project_id = ? GROUP BY category', [projectId]);
   const categories = {};
-  const catLabels = { business_change: 'Business Changes', management_strategy: 'Management Strategy', financial_anomaly: 'Financial Anomalies', risk_alert: 'Risk Alerts', open_question: 'Open Questions' };
+  const catLabels = { mda: 'MD&A — Management Discussion', financials: 'Financial Statements', kpi: 'Operating KPIs', capital: 'Capital Allocation', risk: 'Risk Factors', notes: 'Notes & Hidden Details', guidance: 'Forward Guidance & Catalysts' };
   if (catRows.length > 0) {
     for (const row of catRows[0].values) {
       categories[row[0]] = { count: row[1], label: catLabels[row[0]] || row[0] };
@@ -350,11 +350,13 @@ analysisRouter.put('/:projectId/analysis/:itemId', (req, res) => {
 // ── AI Analysis Engine (Bilingual) ──────────────────────
 function getAnalysisPrompts() {
   return {
-    business_change: `You are a senior equity analyst. Extract "Key Business Changes" from the document below. Output JSON array: [{"title":"Change title","content":"Detailed description","confidence":0.85}]. Return [] if none found. Output in English ONLY.`,
-    financial_anomaly: `You are a senior equity analyst. Extract "Financial Anomalies" from the document. Focus on: unusual revenue/expense items, margin changes, cash flow anomalies, accounting changes. Output JSON array: [{"title":"Anomaly title","content":"Detailed description","magnitude":"significant|moderate|minor","confidence":0.85}]. Return [] if none. Output in English ONLY.`,
-    management_strategy: `You are a senior equity analyst. Extract "Management Strategy Focus" from the document. Focus on: key topics emphasized, strategic shifts, guidance changes, capital allocation plans. Output JSON array: [{"title":"Strategy point","content":"Detailed description","sentiment":"positive|neutral|negative","confidence":0.85}]. Return [] if none. Output in English ONLY.`,
-    risk_alert: `You are a senior equity analyst. Extract "Risk Alerts" from the document. Focus on: litigation, regulatory risks, supply chain vulnerabilities, competitive threats, macro sensitivity. Output JSON array: [{"title":"Risk point","content":"Detailed description","severity":"high|medium|low","confidence":0.85}]. Return [] if none. Output in English ONLY.`,
-    open_question: `You are a senior equity analyst. Extract "Open Questions" from the document. Focus on: insufficient disclosures, contradictions, areas worth deeper investigation. Output JSON array: [{"question":"Question","context":"Relevant context","importance":"high|medium|low"}]. Return [] if none. Output in English ONLY.`,
+    mda: `You are a senior equity analyst reviewing SEC filings. Extract "Management Discussion & Analysis (MD&A)" insights. Focus on: (1) Revenue breakdown by segment/region with growth rates (2) Cost & expense analysis — COGS, SG&A, R&D trends (3) Gross margin & net margin drivers explained by management (4) Industry environment & competitive landscape commentary (5) Forward guidance — revenue, margins, capex, product timelines (6) One-time items — impairments, M&A costs, gains/losses. Output JSON array: [{"title":"...","content":"detailed analysis with numbers if available","confidence":0.85}]. Output in English ONLY.`,
+    financials: `You are a senior equity analyst reviewing SEC filings. Extract "Financial Statements Key Metrics". Focus on: (1) Revenue — YoY/QoQ growth, segment breakdown (2) Gross Profit & Margin — structural changes (3) Operating Profit & Margin — core profitability excluding one-time items (4) EPS — basic & diluted, growth rate (5) Balance Sheet — cash position, receivables, inventory, debt levels, goodwill (6) Cash Flow — operating CF vs net income quality, CAPEX, Free Cash Flow, financing activities. Output JSON array: [{"title":"...","content":"quantitative analysis with numbers","confidence":0.85}]. Output in English ONLY.`,
+    kpi: `You are a senior equity analyst. Extract "Operating KPIs & Business Metrics" from the document. Focus on: capacity utilization, store count/expansion, customer metrics (MAU/DAU/users), average revenue per user, same-store sales, production volumes, pipeline progress (for pharma/tech), loan book (for financials). Output JSON array: [{"title":"...","content":"specific KPI values and trends","confidence":0.85}]. Output in English ONLY.`,
+    capital: `You are a senior equity analyst. Extract "Capital Allocation & Shareholder Returns" insights. Focus on: (1) Dividend policy — payout ratio, stability, growth (2) Share buybacks — amount, impact on EPS (3) Equity incentives — dilution, performance conditions (4) M&A activity — acquisitions, divestitures, synergy expectations (5) Major investments — new facilities, capacity expansion. Output JSON array: [{"title":"...","content":"detailed with amounts and rationale","confidence":0.85}]. Output in English ONLY.`,
+    risk: `You are a senior equity analyst. Extract "Risk Factors" following professional classification: (1) Industry/Policy — regulation, tariffs, antitrust (2) Operational — input costs, supply chain, customer concentration (3) Financial — FX exposure, interest rates, debt, impairments (4) Competitive — new entrants, pricing pressure, disruption (5) Black Swan — geopolitics, pandemics, climate. Each risk must be SPECIFIC to the company, not generic. Output JSON array: [{"title":"...","content":"specific risk with impact assessment","severity":"high|medium|low"}]. Output in English ONLY.`,
+    notes: `You are a senior equity analyst. Extract "Financial Statement Notes — Hidden Details". Focus on: (1) Revenue recognition policy changes (2) Bad debt/allowance changes (3) Inventory/asset impairment rules (4) Related party transactions (5) Major customer concentration (top 5 %) (6) Contingent liabilities, lawsuits, guarantees (7) Segment reporting details. These are often the MOST IMPORTANT hidden signals. Output JSON array: [{"title":"...","content":"detail and why it matters","confidence":0.85}]. Output in English ONLY.`,
+    guidance: `You are a senior equity analyst. Extract "Forward Guidance & Catalysts" — the MOST important section for stock pitch catalysts. Focus on: (1) Revenue guidance for next quarter/year (2) Margin guidance (3) Capex plans & capacity expansion timeline (4) Product launch timelines (5) Profitability targets (6) Any guidance raise/cut vs prior period. Output JSON array: [{"title":"...","content":"specific numbers and timeline","confidence":0.85}]. Output in English ONLY.`,
   };
 }
 
@@ -482,35 +484,79 @@ async function collectProjectData(projectId) {
     const p = rowToProject(rows[0].values[0]);
     const tickers = [p.stock_code, ...(p.peers || []).map(peer => peer.code)];
 
+    // ── SEC CIK Lookup Cache ──
+    let tickerCikMap = {};
+    try {
+      const secResp = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: { 'User-Agent': 'StockResearchAssistant/1.0 (demo@example.com)' } });
+      const secData = await secResp.json();
+      for (const [_, v] of Object.entries(secData)) {
+        tickerCikMap[v.ticker] = String(v.cik_str).padStart(10, '0');
+      }
+    } catch (e) { console.error('SEC CIK lookup failed:', e.message); }
+
     for (const ticker of tickers) {
-      // ── Earnings: Real Yahoo + Alpha Vantage + fallback ──
-      if (p.data_sources?.earnings !== false) {
+      if (!ticker) continue;
+      const isUS = p.market === 'US' || (!['A','HK'].includes(p.market));
+
+      // ── SEC EDGAR Filings (10-K, 10-Q, 8-K) for US stocks ──
+      if (isUS && p.data_sources?.earnings !== false) {
+        const cik = tickerCikMap[ticker.toUpperCase()];
+        if (cik) {
+          try {
+            const subResp = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: { 'User-Agent': 'StockResearchAssistant/1.0 (demo@example.com)' } });
+            const subData = await subResp.json();
+            const filings = (subData.filings?.recent || {});
+            const forms = filings.form || []; const dates = filings.filingDate || [];
+            const accessions = filings.accessionNumber || []; const docs = filings.primaryDocument || [];
+
+            // Fetch last 3 10-K, last 4 10-Q, last 3 8-K
+            const targets = [];
+            let k10 = 0, q10 = 0, k8 = 0;
+            for (let i = 0; i < forms.length; i++) {
+              const form = forms[i];
+              if (form === '10-K' && k10 < 3) { targets.push({ i, form, type: '10k' }); k10++; }
+              else if (form === '10-Q' && q10 < 4) { targets.push({ i, form, type: '10q' }); q10++; }
+              else if ((form === '8-K' || form === '8-K/A') && k8 < 3) { targets.push({ i, form, type: '8k' }); k8++; }
+              if (k10 >= 3 && q10 >= 4 && k8 >= 3) break;
+            }
+
+            for (const t of targets) {
+              try {
+                const acc = accessions[t.i].replace(/-/g, '');
+                const doc = docs[t.i];
+                const url = `https://www.sec.gov/Archives/edgar/data/${cik}/${acc}/${doc}`;
+                const filingResp = await fetch(url, { headers: { 'User-Agent': 'StockResearchAssistant/1.0 (demo@example.com)' } });
+                let text = await filingResp.text();
+                // Clean HTML
+                text = text.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, ' ').replace(/\s+/g, ' ').trim();
+                text = text.substring(0, 30000); // Limit to 30k chars per filing
+
+                const labels = { '10k': 'Annual Report (10-K)', '10q': 'Quarterly Report (10-Q)', '8k': 'Current Report (8-K)' };
+                const id = uuidv4();
+                db.run("INSERT INTO documents (id, project_id, doc_type, title, source_url, content, ticker, period, fetch_status) VALUES (?, ?, 'sec_filing', ?, ?, ?, ?, ?, 'completed')",
+                  [id, projectId, `${ticker} ${labels[t.type]} — ${dates[t.i]}`, url, text, ticker, dates[t.i]]);
+                saveDB();
+              } catch (e) { console.error(`SEC filing ${t.form} for ${ticker}:`, e.message); }
+            }
+          } catch (e) { console.error(`SEC submissions for ${ticker}:`, e.message); }
+        }
+      }
+
+      // ── Yahoo Finance Quick Data ──
+      if (p.data_sources?.earnings !== false && !isUS) {
         let finData = null;
-        try { const q = await yahooFinance.quote(ticker); if (q) finData = { price: q.regularMarketPrice, currency: q.currency, marketCap: q.marketCap, pe: q.trailingPE, eps: q.epsTrailingTwelveMonths, revenue: q.revenue, grossMargin: q.grossMargins, profitMargin: q.profitMargins, high52: q.fiftyTwoWeekHigh, low52: q.fiftyTwoWeekLow, analystRating: q.averageAnalystRating, targetPrice: q.targetMeanPrice }; } catch (e) { console.error(`Yahoo quote ${ticker}:`, e.message); }
-        if (!finData) { try { const r = await fetch(`https://www.alphavantage.co/query?function=OVERVIEW&symbol=${ticker}&apikey=${process.env.ALPHA_VANTAGE_KEY||'demo'}`); const d = await r.json(); if (d?.Symbol) finData = { price: parseFloat(d.AnalystTargetPrice)||null, currency: d.Currency, marketCap: parseInt(d.MarketCapitalization)||null, pe: parseFloat(d.PERatio)||null, eps: parseFloat(d.EPS)||null, revenue: parseInt(d.RevenueTTM)||null, grossMargin: d.GrossProfitTTM&&d.RevenueTTM?(parseFloat(d.GrossProfitTTM)/parseFloat(d.RevenueTTM)*100):null, profitMargin: parseFloat(d.ProfitMargin)*100||null }; } catch (e) { console.error(`AlphaVantage ${ticker}:`, e.message); } }
-        if (!finData) finData = { price: 185, currency: 'USD', marketCap: 2800000000000, pe: 28.5, eps: 6.5, revenue: 385000000000, grossMargin: 45.2, profitMargin: 24.8, analystRating: 'Buy', targetPrice: 210 };
+        try { const q = await yahooFinance.quote(ticker); if (q) finData = { price: q.regularMarketPrice, currency: q.currency, marketCap: q.marketCap, pe: q.trailingPE, revenue: q.revenue, grossMargin: q.grossMargins, profitMargin: q.profitMargins }; } catch (e) {}
+        if (!finData) finData = { price: 185, currency: 'USD', marketCap: 2800000000000, pe: 28.5, revenue: 385000000000 };
         const id = uuidv4();
         db.run("INSERT INTO documents (id, project_id, doc_type, title, source_url, content, ticker, period, fetch_status) VALUES (?, ?, 'earnings', ?, ?, ?, ?, ?, 'completed')", [id, projectId, `${ticker} Financial Data`, `https://finance.yahoo.com/quote/${ticker}`, JSON.stringify(finData,null,2), ticker, 'FY2025']); saveDB();
       }
 
-      // ── News: Real Yahoo headlines + fallback ──
+      // ── News ──
       if (p.data_sources?.news !== false) {
         let articles = [];
         try { const sr = await yahooFinance.search(ticker, { newsCount: 5 }); articles = (sr.news||[]).slice(0,3); } catch (e) {}
-        if (articles.length === 0) articles = [{ title: `${ticker} Q4 Earnings Beat Estimates` }, { title: `Analysts Raise ${ticker} Price Target` }, { title: `${ticker} Announces New Product Line` }];
+        if (articles.length === 0) articles = [{ title: `${ticker} Q4 Earnings Beat Estimates` }, { title: `Analysts Raise ${ticker} Price Target` }];
         for (const a of articles) { const id = uuidv4(); db.run("INSERT INTO documents (id, project_id, doc_type, title, source_url, content, ticker, period, fetch_status) VALUES (?, ?, 'news', ?, ?, ?, ?, ?, 'completed')", [id, projectId, a.title||`${ticker} News`, a.link||'', a.title||'', ticker, 'Recent']); saveDB(); }
-      }
-
-      // ── Transcripts ──
-      if (p.data_sources?.transcripts !== false) {
-        const id = uuidv4();
-        db.run("INSERT INTO documents (id, project_id, doc_type, title, source_url, content, ticker, period, fetch_status) VALUES (?, ?, 'transcript', ?, ?, ?, ?, ?, 'completed')", [id, projectId, `${ticker} Earnings Call Transcript Q4 2025`, '', `${ticker} Q4 2025 Earnings Call Transcript.\n\nManagement stated that business is growing steadily with strong momentum in key segments. Revenue growth was driven by product innovation and expanding market share. The company continues to invest in R&D and expects margin improvement in the coming quarters. Forward guidance was raised, reflecting confidence in the pipeline. Key risks mentioned include macroeconomic uncertainty and competitive pressure.`, ticker, '2025Q4']); saveDB();
-      }
-
-      // ── Presentations ──
-      if (p.data_sources?.presentations !== false) {
-        const id = uuidv4();
-        db.run("INSERT INTO documents (id, project_id, doc_type, title, source_url, content, ticker, period, fetch_status) VALUES (?, ?, 'presentation', ?, ?, ?, ?, ?, 'completed')", [id, projectId, `${ticker} Investor Presentation Q4 2025`, '', `${ticker} Investor Presentation Q4 2025.\n\nKey Highlights:\n• Revenue: $XX billion (+XX% YoY)\n• Operating Margin: XX%\n• R&D Investment: $XX billion\n• New Product Pipeline: XX products in development\n• Geographic Expansion: Entering XX new markets\n• ESG Goals: Carbon neutral by 2030\n• Shareholder Returns: $XX billion in buybacks and dividends`, ticker, '2025Q4']); saveDB();
       }
     }
 

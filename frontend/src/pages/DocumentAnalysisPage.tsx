@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Tabs, Tag, Button, Space, Typography, Spin, Empty, message, Collapse, Tooltip, Input } from 'antd';
-import { FileTextOutlined, EditOutlined, SaveOutlined, RightCircleOutlined, ThunderboltOutlined, BulbOutlined, WarningOutlined, QuestionCircleOutlined, RiseOutlined } from '@ant-design/icons';
+import { FileTextOutlined, EditOutlined, SaveOutlined, RightCircleOutlined, ThunderboltOutlined, BulbOutlined, WarningOutlined, QuestionCircleOutlined, RiseOutlined, SearchOutlined, RocketOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import apiClient from '../api/client';
 
@@ -10,11 +10,13 @@ const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 const CAT_CFG: Record<string, { icon: React.ReactNode; color: string }> = {
-  business_change: { icon: <RiseOutlined />, color: '#163D7A' },
-  financial_anomaly: { icon: <ThunderboltOutlined />, color: '#E6772E' },
-  management_strategy: { icon: <BulbOutlined />, color: '#722ED1' },
-  risk_alert: { icon: <WarningOutlined />, color: '#E6772E' },
-  open_question: { icon: <QuestionCircleOutlined />, color: '#1677FF' },
+  mda: { icon: <FileTextOutlined />, color: '#163D7A' },
+  financials: { icon: <ThunderboltOutlined />, color: '#2D995F' },
+  kpi: { icon: <RiseOutlined />, color: '#722ED1' },
+  capital: { icon: <BulbOutlined />, color: '#FA8C16' },
+  risk: { icon: <WarningOutlined />, color: '#E6772E' },
+  notes: { icon: <SearchOutlined />, color: '#1677FF' },
+  guidance: { icon: <RocketOutlined />, color: '#EB2F96' },
 };
 
 export default function DocumentAnalysisPage() {
