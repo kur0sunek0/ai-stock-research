@@ -191,10 +191,11 @@ collectRouter.post('/:projectId/collect', async (req, res) => {
   db.run('UPDATE projects SET status = ? WHERE id = ?', ['collecting', projectId]);
   saveDB();
 
-  // 异步采集数据
-  collectProjectData(projectId).catch(err => console.error('Collection error:', err.message));
-
+  // Sync collection — wait for completion
   res.json({ code: 202, message: 'Data collection started', task_id: projectId });
+  try {
+    await collectProjectData(projectId);
+  } catch (err) { console.error('Collection error:', err.message); }
 });
 
 // 查询采集状态
