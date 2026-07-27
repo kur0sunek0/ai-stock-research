@@ -516,6 +516,7 @@ OPERATING KPIs: Active installed base: 2+ billion devices. Paid subscriptions: 1
           [id, projectId, `${ticker} 10-K/10-Q Financial Review`, `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${ticker}`, finContent, ticker, 'FY2025']);
         saveDB();
       }
+    }
 
     // Mark project as collected
     db.run('UPDATE projects SET status = ? WHERE id = ?', ['collected', projectId]);
