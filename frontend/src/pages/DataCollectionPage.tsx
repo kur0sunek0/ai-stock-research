@@ -8,7 +8,7 @@ import apiClient from '../api/client';
 
 const { Title } = Typography;
 
-const DOC_TYPES: Record<string, string> = { earnings: 'earnings', news: 'news', transcript: 'transcript', presentation: 'presentation' };
+const DOC_TYPES: Record<string, string> = { earnings: 'earnings', news: 'news', transcript: 'transcript', presentation: 'presentation', sec_filing: 'SEC Filing' };
 const STATUS_TAG: Record<string, { color: string; icon: React.ReactNode }> = { completed: { color: 'success', icon: <CheckCircleOutlined /> }, failed: { color: 'error', icon: <CloseCircleOutlined /> }, pending: { color: 'default', icon: <ClockCircleOutlined /> } };
 
 export default function DataCollectionPage() {
