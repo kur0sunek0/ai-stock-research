@@ -191,11 +191,16 @@ collectRouter.post('/:projectId/collect', async (req, res) => {
   db.run('UPDATE projects SET status = ? WHERE id = ?', ['collecting', projectId]);
   saveDB();
 
-  // Sync collection — wait for completion
-  res.json({ code: 202, message: 'Data collection started', task_id: projectId });
+  // Sync collection — wait and return results
   try {
     await collectProjectData(projectId);
-  } catch (err) { console.error('Collection error:', err.message); }
+    const docs = db.exec("SELECT * FROM documents WHERE project_id = ?", [projectId]);
+    const count = docs.length > 0 ? docs[0].values.length : 0;
+    res.json({ code: 200, message: `Collection complete — ${count} documents`, task_id: projectId });
+  } catch (err) {
+    console.error('Collection error:', err.message);
+    res.status(500).json({ detail: 'Collection failed' });
+  }
 });
 
 // 查询采集状态

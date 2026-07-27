@@ -30,7 +30,7 @@ export default function DataCollectionPage() {
 
   useEffect(() => { fetchStatus(); const iv = setInterval(() => { if (collecting) fetchStatus(); }, 3000); return () => clearInterval(iv); }, [fetchStatus, collecting]);
 
-  const handleStart = async () => { setCollecting(true); try { await apiClient.post(`/projects/${projectId}/collect`); message.success(t('collect.collectionStarted')); } catch (e: any) { message.error(e.response?.data?.detail || ''); setCollecting(false); } };
+  const handleStart = async () => { setCollecting(true); try { await apiClient.post(`/projects/${projectId}/collect`); message.success(t('collect.collectionStarted')); fetchStatus(); } catch (e: any) { message.error(e.response?.data?.detail || ''); } finally { setCollecting(false); } };
 
   if (loading) return <Spin size="large" style={{ display: 'block', marginTop: 80 }} />;
 
