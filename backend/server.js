@@ -1,5 +1,6 @@
 /**
- * AI Stock Research Assistant — Backend Server (Node.js + Express + sql.js)
+ * AI Stock Research Assistant — Backend Server v2.0
+ * 7-Section Professional Analysis | SEC-Style Financial Docs
  */
 import express from 'express';
 import cors from 'cors';
