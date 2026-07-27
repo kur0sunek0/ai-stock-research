@@ -40,7 +40,7 @@ export default function DataCollectionPage() {
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   const columns = [
-    { title: t('collect.type'), dataIndex: 'doc_type', key: 'type', width: 100, render: (v: string) => `${['earnings','news','transcript','presentation'].includes(v) ? t(`collect.${v}`) : v}` },
+    { title: t('collect.type'), dataIndex: 'doc_type', key: 'type', width: 100, render: (v: string) => DOC_TYPES[v] || v },
     { title: t('collect.title_col'), dataIndex: 'title', key: 'title', ellipsis: true },
     { title: t('collect.ticker'), dataIndex: 'ticker', key: 'ticker', width: 100 },
     { title: t('collect.status_col'), dataIndex: 'fetch_status', key: 'st', width: 100, render: (s: string) => { const c = STATUS_TAG[s] || STATUS_TAG.pending; return <Tag color={c.color} icon={c.icon}>{s}</Tag>; } },

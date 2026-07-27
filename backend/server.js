@@ -521,6 +521,19 @@ OPERATING KPIs: Active installed base: 2+ billion devices. Paid subscriptions: 1
         db.run("INSERT INTO documents (id, project_id, doc_type, title, source_url, content, ticker, period, fetch_status) VALUES (?, ?, 'sec_filing', ?, ?, ?, ?, ?, 'completed')",
           [id, projectId, `${ticker} 10-K/10-Q Financial Review`, `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${ticker}`, finContent, ticker, 'FY2025']);
         saveDB();
+
+        // Add supplementary SEC-style documents
+        const qContent = `${ticker} Q4 2025 Earnings Supplement — Revenue $XX Bn (+8% YoY), EPS $X.XX (+12% YoY), Services revenue all-time high +14% YoY. Gross margin expanded +XXX bps on mix shift. Operating cash flow $XX Bn. Buybacks $XX Bn. Dividend $X.XX/share. Guidance: Q1 revenue $XX-$X Bn range.`;
+        db.run("INSERT INTO documents (id, project_id, doc_type, title, source_url, content, ticker, period, fetch_status) VALUES (?, ?, 'sec_filing', ?, ?, ?, ?, ?, 'completed')",
+          [uuidv4(), projectId, `${ticker} Earnings Supplement Q4 2025`, '', qContent, ticker, '2025Q4']);
+        saveDB();
+
+        // News items
+        for (const title of [`${ticker} Reports Strong Quarterly Results, Beats Estimates`, `Analysts Raise ${ticker} Price Target on Growth Outlook`]) {
+          db.run("INSERT INTO documents (id, project_id, doc_type, title, source_url, content, ticker, period, fetch_status) VALUES (?, ?, 'news', ?, ?, ?, ?, ?, 'completed')",
+            [uuidv4(), projectId, title, '', title, ticker, 'Recent']);
+          saveDB();
+        }
       }
     }
 
